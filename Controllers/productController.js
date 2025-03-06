@@ -11,14 +11,12 @@ exports.CreateProduct = async (req, res) => {
   }
 
   try {
-    // Create a new product instance
     const product = new Product({
       name: name,
       price: price,
       category: category,
     });
 
-    // Save the product to the database
     await product.save();
 
     console.log("Product created successfully");
