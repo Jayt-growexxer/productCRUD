@@ -1,0 +1,19 @@
+{
+  "name": "task",
+  "version": "1.0.0",
+  "description": "\"It is Task of Node.Js\"",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jay Thakkar",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "fs": "^0.0.1-security",
+    "init": "^0.1.2",
+    "json": "^11.0.0",
+    "mongoose": "^8.12.1"
+  }
+}
