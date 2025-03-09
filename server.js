@@ -11,7 +11,7 @@ const connectDB = async () => {
     // Connect to MongoDB
     const con = await mongoose.connect(DB, {});
 
-    console.log(`✅ Connected to DB: ${con.connection.host}`);
+    console.log(`✅ Connected to DB file: ${con.connection.host}`);
 
     // Start the server only after a successful DB connection
   } catch (err) {
