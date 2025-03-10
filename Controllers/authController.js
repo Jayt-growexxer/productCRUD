@@ -2,6 +2,7 @@ const User = require("../Model/userSchema");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const crypto = require("crypto");
+const { sendEmail } = require("./utils/emai");
 exports.createUser = async (req, res) => {
   const { name, email, password, confirmPassword, userType } = req.body;
 
@@ -103,14 +104,12 @@ exports.forgetPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
-    // Validate input fields
     if (!email) {
       return res
         .status(400)
         .json({ success: false, message: "Please enter an email address" });
     }
 
-    // Check if user exists
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({
@@ -118,25 +117,40 @@ exports.forgetPassword = async (req, res) => {
         message: "User does not exist. Please sign up.",
       });
     }
+
     const resetToken = user.createPasswordResetToken();
-    await user.save();
-    // send the mail of user
+    await user.save({ validateBeforeSave: false });
+
     const resetUrl = `${req.protocol}://${req.get("host")}/v0/api/auth/resetPassword/${resetToken}`;
-    const message = `Please reset your password by using this link ${resetUrl}`;
+    const message = `Please reset your password by clicking the link: ${resetUrl}`;
 
-    res.status(200).json({
-      success: true,
+    try {
+      await sendEmail({
+        email: user.email,
+        subject: "Password Reset Request",
+        message: message,
+      });
 
-      message: message,
-    });
+      res.status(200).json({
+        success: true,
+        message: "Password reset email sent successfully",
+      });
+    } catch (error) {
+      user.passwordResetToken = undefined;
+      user.passwordResetExpires = undefined;
+      await user.save({ validateBeforeSave: false });
+
+      return res.status(500).json({
+        success: false,
+        message: "Email could not be sent. Please try again later.",
+      });
+    }
   } catch (error) {
     console.error(error);
-    res.status(500).json({
-      success: false,
-      message: "Internal Server Error",
-    });
+    res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
+
 exports.resetPassword = async (req, res) => {
   try {
     const hashedToken = crypto
