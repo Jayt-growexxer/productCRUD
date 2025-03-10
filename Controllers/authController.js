@@ -1,7 +1,7 @@
 const User = require("../Model/userSchema");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
-
+const crypto = require("crypto");
 exports.createUser = async (req, res) => {
   const { name, email, password, confirmPassword, userType } = req.body;
 
@@ -101,24 +101,13 @@ exports.signin = async (req, res) => {
 
 exports.forgetPassword = async (req, res) => {
   try {
-    const { email, newpassword, newConfirmPassword } = req.body;
+    const { email } = req.body;
 
     // Validate input fields
     if (!email) {
       return res
         .status(400)
         .json({ success: false, message: "Please enter an email address" });
-    }
-    if (!newpassword || !newConfirmPassword) {
-      return res.status(400).json({
-        success: false,
-        message: "Please enter both new password and confirm password",
-      });
-    }
-    if (newpassword !== newConfirmPassword) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Passwords do not match" });
     }
 
     // Check if user exists
@@ -129,24 +118,172 @@ exports.forgetPassword = async (req, res) => {
         message: "User does not exist. Please sign up.",
       });
     }
-
-    // Hash the new password
-    // const hashedPassword = await bcrypt.hash(newpassword, 12);
-
-    // Update password
-    // user.password = hashedPassword;
-    user.password = newpassword;
+    const resetToken = user.createPasswordResetToken();
     await user.save();
+    // send the mail of user
+    const resetUrl = `${req.protocol}://${req.get("host")}/v0/api/auth/resetPassword/${resetToken}`;
+    const message = `Please reset your password by using this link ${resetUrl}`;
 
     res.status(200).json({
       success: true,
-      message: "Password updated successfully",
+
+      message: message,
     });
   } catch (error) {
     console.error(error);
     res.status(500).json({
       success: false,
       message: "Internal Server Error",
+    });
+  }
+};
+exports.resetPassword = async (req, res) => {
+  try {
+    const hashedToken = crypto
+      .createHash("sha256")
+      .update(req.params.token)
+      .digest("hex");
+
+    const user = await User.findOne({
+      passwordResetToken: hashedToken,
+      passwordResetExpires: { $gt: Date.now() }, // Ensure token is still valid
+    });
+
+    if (!user) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid or expired token" });
+    }
+
+    const { password, confirmPassword } = req.body;
+    if (password !== confirmPassword) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Passwords do not match" });
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: "Your password was successfully changed",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+exports.updateProfile = async (req, res) => {
+  try {
+    const id = req.user._id;
+    const { name, email, password, confirmPassword } = req.body;
+
+    if (!name || !email || !password || !confirmPassword) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Please provide all fields" });
+    }
+
+    if (password !== confirmPassword) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Passwords do not match" });
+    }
+
+    let user = await User.findOne({ email });
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    user.name = name;
+    user.password = password;
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Your profile has been updated successfully",
+      data: { name: user.name, email: user.email },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      message: "Something went wrong",
+      error: error.message,
+    });
+  }
+};
+exports.protect = async (req, res, next) => {
+  try {
+    let token;
+    if (
+      req.headers.authorization &&
+      req.headers.authorization.startsWith("Bearer")
+    ) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+
+    if (!token) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Not authorized, no token" });
+    }
+
+    const decoded = jwt.verify(token, process.env.SECRET);
+
+    const freshUser = await User.findById(decoded.id);
+    if (!freshUser) {
+      return res
+        .status(401)
+        .json({ success: false, message: "User no longer exists" });
+    }
+
+    if (freshUser.changedPasswordAfter(decoded.iat)) {
+      return res.status(401).json({
+        success: false,
+        message: "User recently changed password. Please log in again.",
+      });
+    }
+
+    req.user = freshUser;
+    next();
+  } catch (error) {
+    return res
+      .status(401)
+      .json({ success: false, message: "Invalid or expired token" });
+  }
+};
+
+exports.GetProfile = async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const data = await User.findById(req.user._id);
+    if (!data) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "User profile successfully fetched",
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
     });
   }
 };
